@@ -41,7 +41,7 @@ async def scrape_google_jobs(filters: dict) -> List[ScrapedJob]:
 
     results = await asyncio.gather(
         _scrape_jobicy(keywords, filters),
-        _scrape_weworkremotely(keywords, filters),
+        _scrape_workingnomads(keywords, filters),
         _scrape_remoteco(keywords, filters),
         return_exceptions=True,
     )
@@ -112,43 +112,37 @@ async def _scrape_jobicy(keywords: str, filters: dict) -> List[ScrapedJob]:
     return jobs
 
 
-async def _scrape_weworkremotely(keywords: str, filters: dict) -> List[ScrapedJob]:
-    """We Work Remotely — free public RSS feed, great for tech/remote jobs."""
+async def _scrape_workingnomads(keywords: str, filters: dict) -> List[ScrapedJob]:
+    """
+    Working Nomads — free public JSON API, no bot protection, tech-focused remote jobs.
+    API docs: https://www.workingnomads.com/api/exposed_jobs/
+    """
     jobs = []
     try:
         async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
-            r = await client.get("https://weworkremotely.com/remote-jobs.rss")
+            r = await client.get(
+                "https://www.workingnomads.com/api/exposed_jobs/?limit=50",
+                headers={**HEADERS, "Accept": "application/json"},
+            )
             if r.status_code != 200:
-                logger.debug(f"WeWorkRemotely returned {r.status_code}")
+                logger.debug(f"WorkingNomads returned {r.status_code}")
                 return jobs
+            data = r.json()
 
-        root = ET.fromstring(r.text)
-        channel = root.find("channel")
-        if channel is None:
-            return jobs
-
-        for item in channel.findall("item"):
-            title = (item.findtext("title") or "").strip()
-            link = (item.findtext("link") or "").strip()
-            desc = (item.findtext("description") or "").strip()
-
-            if not title or not link:
+        items = data if isinstance(data, list) else data.get("results", data.get("jobs", []))
+        for item in items:
+            title = (item.get("title") or item.get("job_title") or "").strip()
+            if not title:
+                continue
+            # Keyword filter — use first two words for looser match
+            kws = keywords.split()[:3] if keywords else []
+            if kws and not any(kw.lower() in title.lower() for kw in kws):
                 continue
 
-            # WWR title format: "Company: Job Title at Company"
-            company = None
-            if ": " in title:
-                parts = title.split(": ", 1)
-                company = parts[0].strip()
-                title = parts[1].strip()
-
-            # Strip HTML
+            link = item.get("url") or item.get("apply_url") or ""
+            company = item.get("company") or item.get("company_name") or ""
+            desc = item.get("description") or item.get("excerpt") or ""
             clean_desc = re.sub(r"<[^>]+>", " ", desc).strip()
-            clean_desc = re.sub(r"\s+", " ", clean_desc)
-
-            # Keyword filter
-            if keywords and not any(kw.lower() in title.lower() for kw in keywords.split()):
-                continue
 
             jobs.append(ScrapedJob(
                 source="google",
@@ -159,10 +153,11 @@ async def _scrape_weworkremotely(keywords: str, filters: dict) -> List[ScrapedJo
                 remote=True,
                 description=clean_desc[:3000],
                 apply_url=link,
+                external_id=str(item.get("id") or item.get("slug") or ""),
             ))
 
     except Exception as e:
-        logger.debug(f"WeWorkRemotely error: {e}")
+        logger.debug(f"WorkingNomads error: {e}")
     return jobs
 
 

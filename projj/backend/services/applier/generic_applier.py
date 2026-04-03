@@ -59,6 +59,14 @@ class GenericApplier(BaseApplier):
             return ApplicationResult(status=ApplyStatus.FAILED, error="Could not open page")
 
         try:
+            # ── Bot / CAPTCHA wall check ───────────────────────────────────
+            if await self._check_bot_wall():
+                logger.warning(f"Bot protection detected for job {self.job.id}: {self.page.url}")
+                return ApplicationResult(
+                    status=ApplyStatus.FAILED,
+                    error="Bot/Cloudflare protection — cannot apply automatically",
+                )
+
             # ── Check if already applied ──────────────────────────────────
             if await self._check_already_applied():
                 return ApplicationResult(status=ApplyStatus.ALREADY_APPLIED)

@@ -148,6 +148,14 @@ class BaseApplier:
         """Dismiss any blocking popups / cookie banners / modals."""
         if not self.page:
             return
+
+        # Press Escape first — closes most modals immediately
+        try:
+            await self.page.keyboard.press("Escape")
+            await random_delay(0.3, 0.6)
+        except Exception:
+            pass
+
         for sel in POPUP_CLOSE_SELECTORS:
             try:
                 el = await self.page.query_selector(sel)
@@ -168,14 +176,26 @@ class BaseApplier:
             except Exception:
                 continue
 
+        # Job board specific — Remotive signup nag
+        for text in ["No thanks", "Maybe later", "Not now", "Continue without signing in",
+                     "Skip", "No, thanks", "Continue as guest"]:
+            try:
+                el = await self.page.query_selector(f"button:has-text('{text}'), a:has-text('{text}')")
+                if el and await el.is_visible():
+                    await el.click()
+                    await random_delay(0.5, 1.0)
+                    break
+            except Exception:
+                continue
+
     # ── Apply button ──────────────────────────────────────────────────────────
 
     async def _click_apply_button(self) -> bool:
         """
         Find and click the Apply button.
-        Handles both same-tab navigation and new-tab (target=_blank) opens.
-        When a new tab is opened the applier switches to it so form filling
-        continues on the actual application page.
+        Detects whether a new tab opens (via target=_blank OR JavaScript window.open)
+        by comparing the browser context page count before and after clicking.
+        Switches self.page to the new tab so form-filling continues there.
         """
         if not self.page:
             return False
@@ -188,37 +208,37 @@ class BaseApplier:
                 await el.scroll_into_view_if_needed()
                 await random_delay(0.5, 1.2)
 
-                # Detect whether the link opens in a new tab
-                opens_new_tab = False
-                try:
-                    target = (await el.get_attribute("target") or "").strip()
-                    opens_new_tab = target == "_blank"
-                except Exception:
-                    pass
+                # Snapshot page count before clicking
+                pages_before = self.context.pages[:]
 
-                if opens_new_tab:
-                    # Wait for the new page to appear before clicking
-                    try:
-                        async with self.context.expect_page(timeout=10_000) as page_info:
-                            await el.click()
-                        new_page = await page_info.value
-                        await new_page.wait_for_load_state("domcontentloaded", timeout=30_000)
-                        # Close the listing page and switch to the application page
-                        try:
-                            await self.page.close()
-                        except Exception:
-                            pass
-                        self.page = new_page
-                        logger.info(f"Switched to new tab: {new_page.url}")
-                        await random_delay(2, 4)
-                        await self._dismiss_popups()
-                        return True
-                    except Exception as e:
-                        logger.debug(f"New-tab handling failed ({e}), falling back to regular click")
-
-                # Same-tab navigation (or fallback)
                 await el.click()
-                await random_delay(2, 4)
+
+                # Wait up to 3 s to see if a new tab opens
+                for _ in range(6):
+                    await asyncio.sleep(0.5)
+                    if len(self.context.pages) > len(pages_before):
+                        break
+
+                pages_after = self.context.pages
+                new_pages = [p for p in pages_after if p not in pages_before]
+
+                if new_pages:
+                    new_page = new_pages[-1]
+                    try:
+                        await new_page.wait_for_load_state("domcontentloaded", timeout=30_000)
+                    except Exception:
+                        pass
+                    # Close the listing page, switch to application page
+                    try:
+                        await self.page.close()
+                    except Exception:
+                        pass
+                    self.page = new_page
+                    logger.info(f"Switched to new tab: {new_page.url}")
+                else:
+                    # Same-tab navigation — wait for it to settle
+                    await random_delay(1.5, 3)
+
                 await self._dismiss_popups()
                 return True
             except Exception:
@@ -598,6 +618,27 @@ class BaseApplier:
                 any(p in content for p in SUCCESS_PATTERNS) or
                 "success" in url or "thank" in url or "confirmation" in url
             )
+        except Exception:
+            return False
+
+    async def _check_bot_wall(self) -> bool:
+        """Detect Cloudflare / bot-protection challenges that we cannot bypass."""
+        if not self.page:
+            return False
+        try:
+            content = (await self.page.content()).lower()
+            url = self.page.url.lower()
+            bot_signals = [
+                "verify you are human",
+                "security verification",
+                "please verify you are a human",
+                "checking your browser",
+                "enable javascript and cookies",
+                "ddos-guard",
+                "access denied",
+                "ray id",  # Cloudflare ray ID footer
+            ]
+            return any(s in content for s in bot_signals)
         except Exception:
             return False
 
