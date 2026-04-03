@@ -27,11 +27,12 @@ def init_db():
                 min_years_exp=0,
                 max_years_exp=10,
                 job_types=json.dumps(["full-time"]),
-                domains=json.dumps([]),
+                # Default keywords for tech/ML jobs — update via the Filters page
+                domains=json.dumps(["Software Engineer", "Python", "Data", "AI", "Machine Learning"]),
                 required_skills=json.dumps([]),
                 excluded_keywords=json.dumps([]),
                 visa_sponsorship_filter="any",
-                portals=json.dumps(["linkedin", "indeed", "glassdoor", "ziprecruiter", "dice"]),
+                portals=json.dumps(["google", "indeed", "remoteok", "remotive", "arbeitnow", "themuse"]),
             )
             db.add(default_filter)
             db.commit()

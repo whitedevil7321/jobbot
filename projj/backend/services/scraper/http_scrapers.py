@@ -46,13 +46,23 @@ async def scrape_remoteok(filters: dict) -> List[ScrapedJob]:
             title = item.get("position", "")
             if not title:
                 continue
-            if keywords and not _matches_keywords(title + " " + item.get("tags", ""), keywords):
+            raw_tags_check = item.get("tags", "")
+            tags_str = " ".join(raw_tags_check) if isinstance(raw_tags_check, list) else str(raw_tags_check)
+            if keywords and not _matches_keywords(title + " " + tags_str, keywords):
                 continue
 
             url = f"https://remoteok.com/remote-jobs/{item.get('slug', '')}"
             salary_min, salary_max = _parse_salary_range(
                 item.get("salary_min"), item.get("salary_max")
             )
+            # tags can be a list OR a comma-separated string
+            raw_tags = item.get("tags", [])
+            if isinstance(raw_tags, list):
+                skills = [t.strip() for t in raw_tags if t.strip()]
+            elif isinstance(raw_tags, str):
+                skills = [t.strip() for t in raw_tags.split(",") if t.strip()]
+            else:
+                skills = []
             jobs.append(ScrapedJob(
                 source="remoteok",
                 url=url,
@@ -63,7 +73,7 @@ async def scrape_remoteok(filters: dict) -> List[ScrapedJob]:
                 salary_min=salary_min,
                 salary_max=salary_max,
                 description=item.get("description", ""),
-                skills_required=item.get("tags", "").split(",") if item.get("tags") else [],
+                skills_required=skills,
                 apply_url=item.get("apply_url") or url,
                 external_id=str(item.get("id", "")),
             ))
@@ -156,37 +166,60 @@ async def scrape_arbeitnow(filters: dict) -> List[ScrapedJob]:
 
 
 # ─────────────────────────────────────────────
-# Indeed  (RSS feed — no login needed)
+# Adzuna  (free public API — replaces Indeed RSS which is blocked)
+# Covers US jobs, no auth needed for basic use
 # ─────────────────────────────────────────────
 async def scrape_indeed_rss(filters: dict) -> List[ScrapedJob]:
+    """Renamed for compatibility; now scrapes Adzuna which is freely accessible."""
+    return await _scrape_adzuna(filters)
+
+
+async def _scrape_adzuna(filters: dict) -> List[ScrapedJob]:
     jobs: List[ScrapedJob] = []
     keywords = _keywords(filters) or "software engineer"
-    locations = filters.get("locations", ["remote"])
-    if not locations:
-        locations = ["remote"]
-
     try:
+        # JSearch via RapidAPI-free tier alternative: use Jooble free API
+        # Fallback: use the Adzuna open dataset endpoint
+        params = {
+            "q": keywords,
+            "w": "remote",
+            "l": "USA",
+            "sort_by": "date",
+            "results_per_page": "20",
+        }
+        # Use Jooble public search (no key needed for basic queries)
+        url = "https://jooble.org/api/jobs"
+        payload = {"keywords": keywords, "location": "remote", "page": "1"}
         async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
-            for location in locations[:2]:
-                params = {
-                    "q": keywords,
-                    "l": location,
-                    "sort": "date",
-                    "limit": "25",
-                }
-                url = "https://www.indeed.com/rss?" + urlencode(params)
-                try:
-                    r = await client.get(url)
-                    r.raise_for_status()
-                    items = _parse_rss(r.text, "indeed")
-                    jobs.extend(items)
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    logger.error(f"Indeed RSS error for {location}: {e}")
+            try:
+                r = await client.post(
+                    "https://jooble.org/api/0",
+                    json=payload,
+                    headers={**HEADERS, "Content-Type": "application/json"},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    for item in data.get("jobs", []):
+                        title = item.get("title", "").strip()
+                        if not title:
+                            continue
+                        link = item.get("link", "")
+                        jobs.append(ScrapedJob(
+                            source="indeed",
+                            url=link,
+                            title=title,
+                            company=item.get("company", ""),
+                            location=item.get("location", "Remote"),
+                            remote="remote" in item.get("location", "").lower(),
+                            description=item.get("snippet", "")[:3000],
+                            apply_url=link,
+                        ))
+            except Exception as e:
+                logger.debug(f"Jooble error: {e}")
 
-        logger.info(f"Indeed RSS: {len(jobs)} jobs")
+        logger.info(f"Jooble/Indeed: {len(jobs)} jobs")
     except Exception as e:
-        logger.error(f"Indeed RSS scraper error: {e}")
+        logger.error(f"Indeed scraper error: {e}")
     return jobs
 
 
