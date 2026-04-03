@@ -4,7 +4,9 @@
       "Bash(npm --version)",
       "Bash(pip show:*)",
       "Bash(pip list:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git -C:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
