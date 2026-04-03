@@ -171,18 +171,56 @@ class BaseApplier:
     # ── Apply button ──────────────────────────────────────────────────────────
 
     async def _click_apply_button(self) -> bool:
+        """
+        Find and click the Apply button.
+        Handles both same-tab navigation and new-tab (target=_blank) opens.
+        When a new tab is opened the applier switches to it so form filling
+        continues on the actual application page.
+        """
         if not self.page:
             return False
         for sel in APPLY_SELECTORS:
             try:
                 el = await self.page.query_selector(sel)
-                if el and await el.is_visible():
-                    await el.scroll_into_view_if_needed()
-                    await random_delay(0.5, 1.2)
-                    await el.click()
-                    await random_delay(2, 4)
-                    await self._dismiss_popups()
-                    return True
+                if not el or not await el.is_visible():
+                    continue
+
+                await el.scroll_into_view_if_needed()
+                await random_delay(0.5, 1.2)
+
+                # Detect whether the link opens in a new tab
+                opens_new_tab = False
+                try:
+                    target = (await el.get_attribute("target") or "").strip()
+                    opens_new_tab = target == "_blank"
+                except Exception:
+                    pass
+
+                if opens_new_tab:
+                    # Wait for the new page to appear before clicking
+                    try:
+                        async with self.context.expect_page(timeout=10_000) as page_info:
+                            await el.click()
+                        new_page = await page_info.value
+                        await new_page.wait_for_load_state("domcontentloaded", timeout=30_000)
+                        # Close the listing page and switch to the application page
+                        try:
+                            await self.page.close()
+                        except Exception:
+                            pass
+                        self.page = new_page
+                        logger.info(f"Switched to new tab: {new_page.url}")
+                        await random_delay(2, 4)
+                        await self._dismiss_popups()
+                        return True
+                    except Exception as e:
+                        logger.debug(f"New-tab handling failed ({e}), falling back to regular click")
+
+                # Same-tab navigation (or fallback)
+                await el.click()
+                await random_delay(2, 4)
+                await self._dismiss_popups()
+                return True
             except Exception:
                 continue
         return False
@@ -509,6 +547,25 @@ class BaseApplier:
         except Exception:
             pass
         return None
+
+    async def _page_has_form_inputs(self) -> bool:
+        """Return True if the current page has at least one visible form input."""
+        if not self.page:
+            return False
+        try:
+            inputs = await self.page.query_selector_all(
+                "input:not([type='hidden']):not([type='submit']):not([type='button']),"
+                "textarea, select"
+            )
+            for inp in inputs:
+                try:
+                    if await inp.is_visible():
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return False
 
     # ── Next / Submit ─────────────────────────────────────────────────────────
 

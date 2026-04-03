@@ -1,17 +1,17 @@
 """
 Google Jobs / additional job scrapers.
-Google Jobs widget URL changed — now handled via direct search.
-Also includes HiringCafe (free, no auth, great for tech jobs).
+Uses reliable free public job feeds — no authentication required.
+Sources: Jobicy API, We Work Remotely RSS, Remote.co RSS.
+Falls back gracefully if any source fails.
 """
 import asyncio
 import logging
 import re
-import json as _json
+import xml.etree.ElementTree as ET
 from typing import List
-from urllib.parse import urlencode, unquote
+from urllib.parse import urlencode
 
 import httpx
-from bs4 import BeautifulSoup
 
 from backend.services.scraper.base_scraper import ScrapedJob
 
@@ -30,20 +30,19 @@ HEADERS = {
 
 async def scrape_google_jobs(filters: dict) -> List[ScrapedJob]:
     """
-    Scrapes multiple reliable free job sources:
-    1. HiringCafe — great for remote/tech jobs, free API
-    2. Remotive extra pages
-    3. WorkableJob board public listings
+    Scrapes multiple reliable free job sources concurrently:
+    1. Jobicy — free remote jobs JSON API
+    2. We Work Remotely — free RSS feed (great for remote tech jobs)
+    3. Remote.co — free RSS feed
     Falls back gracefully if any source fails.
     """
     jobs: List[ScrapedJob] = []
     keywords = _keywords(filters) or "software engineer"
 
-    # Run all sub-scrapers concurrently
     results = await asyncio.gather(
-        _scrape_hiringcafe(keywords, filters),
         _scrape_jobicy(keywords, filters),
-        _scrape_wellfound(keywords, filters),
+        _scrape_weworkremotely(keywords, filters),
+        _scrape_remoteco(keywords, filters),
         return_exceptions=True,
     )
 
@@ -66,59 +65,26 @@ async def scrape_google_jobs(filters: dict) -> List[ScrapedJob]:
     return unique
 
 
-async def _scrape_hiringcafe(keywords: str, filters: dict) -> List[ScrapedJob]:
-    """HiringCafe — free public API, great for tech/remote jobs."""
+async def _scrape_jobicy(keywords: str, filters: dict) -> List[ScrapedJob]:
+    """Jobicy — free remote jobs JSON API, no auth needed."""
     jobs = []
     try:
-        params = {
-            "query": keywords,
-            "remote": "true",
-            "page": "1",
-        }
-        url = "https://hiring.cafe/api/search/jobs?" + urlencode(params)
+        # Use short first keyword for tag filter; fall back to broad tech search
+        tag = keywords.split()[0] if keywords else ""
+        base = "https://jobicy.com/api/v2/remote-jobs?count=20&geo=usa&industry=engineering"
+        url = base + (f"&tag={tag}" if tag else "")
+
         async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
             r = await client.get(url)
             if r.status_code != 200:
-                return jobs
-            data = r.json()
-            for item in data.get("jobs", data if isinstance(data, list) else []):
-                title = item.get("title") or item.get("job_title", "")
-                if not title:
-                    continue
-                link = item.get("url") or item.get("job_url") or item.get("apply_url", "")
-                company = item.get("company") or item.get("company_name", "")
-                location = item.get("location", "Remote")
-                jobs.append(ScrapedJob(
-                    source="google",
-                    url=link or f"https://hiring.cafe/jobs/{title.replace(' ', '-').lower()}",
-                    title=title,
-                    company=company,
-                    location=location,
-                    remote=True,
-                    description=item.get("description", "")[:3000],
-                    apply_url=link,
-                ))
-    except Exception as e:
-        logger.debug(f"HiringCafe error: {e}")
-    return jobs
-
-
-async def _scrape_jobicy(keywords: str, filters: dict) -> List[ScrapedJob]:
-    """Jobicy — free remote jobs API, no auth needed."""
-    jobs = []
-    try:
-        # Jobicy has a free RSS/JSON feed
-        url = f"https://jobicy.com/api/v2/remote-jobs?count=20&geo=USA&industry=tech&tag={urlencode({'': keywords})[1:]}"
-        async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
-            r = await client.get("https://jobicy.com/api/v2/remote-jobs?count=20&geo=USA&industry=tech")
-            if r.status_code != 200:
+                logger.debug(f"Jobicy returned {r.status_code}")
                 return jobs
             data = r.json()
             for item in data.get("jobs", []):
                 title = item.get("jobTitle", "")
                 if not title:
                     continue
-                # Filter by keywords
+                # Keyword filter
                 if keywords and not any(
                     kw.lower() in title.lower() or kw.lower() in item.get("jobExcerpt", "").lower()
                     for kw in keywords.split()
@@ -133,7 +99,11 @@ async def _scrape_jobicy(keywords: str, filters: dict) -> List[ScrapedJob]:
                     location=item.get("jobGeo", "Remote"),
                     remote=True,
                     description=item.get("jobExcerpt", "")[:3000],
-                    skills_required=item.get("jobIndustry", []) if isinstance(item.get("jobIndustry"), list) else [],
+                    skills_required=(
+                        item.get("jobIndustry", [])
+                        if isinstance(item.get("jobIndustry"), list)
+                        else []
+                    ),
                     apply_url=link,
                     external_id=str(item.get("id", "")),
                 ))
@@ -142,56 +112,110 @@ async def _scrape_jobicy(keywords: str, filters: dict) -> List[ScrapedJob]:
     return jobs
 
 
-async def _scrape_wellfound(keywords: str, filters: dict) -> List[ScrapedJob]:
-    """
-    Scrapes Wellfound (AngelList) public job listings via their search API.
-    Good for startup jobs and tech roles.
-    """
+async def _scrape_weworkremotely(keywords: str, filters: dict) -> List[ScrapedJob]:
+    """We Work Remotely — free public RSS feed, great for tech/remote jobs."""
     jobs = []
     try:
-        # Use their public search endpoint
-        params = {"q": keywords, "remote": "true"}
-        url = "https://wellfound.com/jobs?" + urlencode(params)
         async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
-            r = await client.get(url)
+            r = await client.get("https://weworkremotely.com/remote-jobs.rss")
             if r.status_code != 200:
+                logger.debug(f"WeWorkRemotely returned {r.status_code}")
                 return jobs
-            soup = BeautifulSoup(r.text, "html.parser")
 
-            # Extract JSON-LD job listings
-            for script in soup.find_all("script", type="application/ld+json"):
-                try:
-                    data = _json.loads(script.string or "")
-                    if isinstance(data, list):
-                        items = data
-                    elif isinstance(data, dict):
-                        items = [data]
-                    else:
-                        continue
-                    for item in items:
-                        if item.get("@type") not in ("JobPosting", "jobPosting"):
-                            continue
-                        title = item.get("title", "")
-                        if not title:
-                            continue
-                        company = item.get("hiringOrganization", {})
-                        if isinstance(company, dict):
-                            company = company.get("name", "")
-                        apply_url = item.get("url") or item.get("jobUrl", "")
-                        jobs.append(ScrapedJob(
-                            source="google",
-                            url=apply_url or url,
-                            title=title,
-                            company=company,
-                            location="Remote",
-                            remote=True,
-                            description=item.get("description", "")[:3000],
-                            apply_url=apply_url,
-                        ))
-                except Exception:
-                    continue
+        root = ET.fromstring(r.text)
+        channel = root.find("channel")
+        if channel is None:
+            return jobs
+
+        for item in channel.findall("item"):
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            desc = (item.findtext("description") or "").strip()
+
+            if not title or not link:
+                continue
+
+            # WWR title format: "Company: Job Title at Company"
+            company = None
+            if ": " in title:
+                parts = title.split(": ", 1)
+                company = parts[0].strip()
+                title = parts[1].strip()
+
+            # Strip HTML
+            clean_desc = re.sub(r"<[^>]+>", " ", desc).strip()
+            clean_desc = re.sub(r"\s+", " ", clean_desc)
+
+            # Keyword filter
+            if keywords and not any(kw.lower() in title.lower() for kw in keywords.split()):
+                continue
+
+            jobs.append(ScrapedJob(
+                source="google",
+                url=link,
+                title=title,
+                company=company,
+                location="Remote",
+                remote=True,
+                description=clean_desc[:3000],
+                apply_url=link,
+            ))
+
     except Exception as e:
-        logger.debug(f"Wellfound error: {e}")
+        logger.debug(f"WeWorkRemotely error: {e}")
+    return jobs
+
+
+async def _scrape_remoteco(keywords: str, filters: dict) -> List[ScrapedJob]:
+    """Remote.co — free public RSS feed for remote jobs."""
+    jobs = []
+    try:
+        async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:
+            r = await client.get("https://remote.co/remote-jobs/feed/")
+            if r.status_code != 200:
+                logger.debug(f"Remote.co returned {r.status_code}")
+                return jobs
+
+        root = ET.fromstring(r.text)
+        channel = root.find("channel")
+        if channel is None:
+            return jobs
+
+        for item in channel.findall("item"):
+            title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
+            desc = (item.findtext("description") or "").strip()
+
+            if not title or not link:
+                continue
+
+            # Extract company from title "Job Title at Company"
+            company = None
+            if " at " in title:
+                parts = title.rsplit(" at ", 1)
+                title = parts[0].strip()
+                company = parts[1].strip()
+
+            clean_desc = re.sub(r"<[^>]+>", " ", desc).strip()
+            clean_desc = re.sub(r"\s+", " ", clean_desc)
+
+            # Keyword filter
+            if keywords and not any(kw.lower() in title.lower() for kw in keywords.split()):
+                continue
+
+            jobs.append(ScrapedJob(
+                source="google",
+                url=link,
+                title=title,
+                company=company,
+                location="Remote",
+                remote=True,
+                description=clean_desc[:3000],
+                apply_url=link,
+            ))
+
+    except Exception as e:
+        logger.debug(f"Remote.co error: {e}")
     return jobs
 
 

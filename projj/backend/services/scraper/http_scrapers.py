@@ -90,10 +90,13 @@ async def scrape_remoteok(filters: dict) -> List[ScrapedJob]:
 async def scrape_remotive(filters: dict) -> List[ScrapedJob]:
     jobs: List[ScrapedJob] = []
     keywords = _keywords(filters)
+    # Remotive search returns 0 results for long multi-word queries.
+    # Use just the first keyword (or none to get all recent jobs).
+    search_term = keywords.split()[0] if keywords else ""
     try:
         params = {}
-        if keywords:
-            params["search"] = keywords
+        if search_term:
+            params["search"] = search_term
         url = "https://remotive.com/api/remote-jobs?" + urlencode(params)
 
         async with httpx.AsyncClient(headers=HEADERS, timeout=20, follow_redirects=True) as client:

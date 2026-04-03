@@ -33,7 +33,7 @@ async def broadcast(message: dict):
             await ws.send_text(json.dumps(message))
         except Exception:
             dead.add(ws)
-    _ws_clients -= dead
+    _ws_clients.difference_update(dead)  # in-place remove — avoids UnboundLocalError
 
 
 @asynccontextmanager

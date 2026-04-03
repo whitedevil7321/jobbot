@@ -72,7 +72,17 @@ class GenericApplier(BaseApplier):
             # ── Find and click Apply button ───────────────────────────────
             apply_clicked = await self._click_apply_button()
             if not apply_clicked:
-                logger.info(f"No apply button — treating page as direct application form")
+                logger.info("No apply button found — treating page as direct application form")
+
+            # ── If page still has no form inputs (listing page), try once more ──
+            # Some job boards (e.g. arbeitnow) have two layers: clicking "Apply"
+            # on the listing goes to the company's ATS which may itself need an
+            # "Apply" click before the form appears.
+            if not await self._page_has_form_inputs():
+                second_click = await self._click_apply_button()
+                if second_click:
+                    logger.info("Found second-level apply button — clicked it")
+                    await self._handle_login_prompt()
 
             await random_delay(2, 4)
 
