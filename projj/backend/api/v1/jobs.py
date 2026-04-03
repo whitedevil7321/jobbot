@@ -90,6 +90,38 @@ async def submit_manual_job(data: JobManualSubmit, db: Session = Depends(get_db)
     return {"message": "Job queued with priority", "job_id": job.id}
 
 
+@router.post("/jobs/{job_id}/apply")
+async def apply_to_job(job_id: int, db: Session = Depends(get_db)):
+    """Enqueue a single job for immediate application."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status in ("applied", "applying"):
+        return {"message": "Already applied or applying", "job_id": job_id}
+    job.status = "queued"
+    job.priority = 1
+    db.commit()
+    enqueue_job(job_id, is_telegram=True)
+    return {"message": "Job queued for immediate application", "job_id": job_id}
+
+
+@router.post("/jobs/apply-all")
+async def apply_all_jobs(db: Session = Depends(get_db)):
+    """Enqueue all new/stuck jobs for application."""
+    jobs = db.query(Job).filter(
+        Job.status.in_(["new", "stuck"])
+    ).order_by(Job.filter_score.desc()).all()
+
+    queued = 0
+    for job in jobs:
+        job.status = "queued"
+        enqueue_job(job.id, is_telegram=False)
+        queued += 1
+
+    db.commit()
+    return {"message": f"Queued {queued} jobs for application", "count": queued}
+
+
 @router.delete("/jobs/{job_id}")
 def delete_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()

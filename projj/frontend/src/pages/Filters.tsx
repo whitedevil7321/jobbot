@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { filtersApi, FilterConfig } from '../api/filters'
 import { Filter, X } from 'lucide-react'
 
-const PORTALS = ['linkedin', 'indeed', 'remoteok', 'remotive', 'arbeitnow', 'themuse']
+const PORTALS = ['google', 'indeed', 'remoteok', 'remotive', 'arbeitnow', 'themuse']
 const JOB_TYPES = ['full-time', 'part-time', 'contract', 'internship', 'temporary']
 const VISA_OPTIONS = [
   { value: 'any', label: 'Any (don\'t filter by sponsorship)' },

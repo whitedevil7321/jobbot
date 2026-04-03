@@ -7,6 +7,7 @@ import Profile from './pages/Profile'
 import Filters from './pages/Filters'
 import TelegramSetup from './pages/TelegramSetup'
 import SettingsPage from './pages/Settings'
+import ApplyQueue from './pages/ApplyQueue'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <main className="flex-1 overflow-auto">
         <Routes>
           <Route path="/"             element={<Dashboard />} />
+          <Route path="/apply-queue"  element={<ApplyQueue />} />
           <Route path="/jobs"         element={<JobFeed />} />
           <Route path="/applications" element={<Applications />} />
           <Route path="/profile"      element={<Profile />} />

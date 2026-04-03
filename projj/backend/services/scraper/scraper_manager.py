@@ -15,20 +15,22 @@ from backend.services.scraper.http_scrapers import (
     scrape_remotive,
     scrape_arbeitnow,
     scrape_indeed_rss,
-    scrape_linkedin_http,
     scrape_themuse,
 )
+from backend.services.scraper.google_jobs_scraper import scrape_google_jobs
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Map portal name → HTTP scraper function
+# LinkedIn removed — high ban risk for accounts.
+# Google Jobs added — reliable public search, no account needed.
 HTTP_SCRAPERS = {
+    "google":    scrape_google_jobs,
     "remoteok":  scrape_remoteok,
     "remotive":  scrape_remotive,
     "arbeitnow": scrape_arbeitnow,
     "indeed":    scrape_indeed_rss,
-    "linkedin":  scrape_linkedin_http,
     "themuse":   scrape_themuse,
 }
 
@@ -165,17 +167,15 @@ class ScraperManager:
             return default
         try:
             configured = json.loads(filter_config.portals)
-            # Map legacy Playwright portal names to HTTP scraper names
+            # Map old/legacy names to current HTTP scraper names
             remap = {
-                "glassdoor": "arbeitnow",
-                "ziprecruiter": "remoteok",
-                "dice": "remotive",
-                "monster": "themuse",
+                "linkedin":    "google",    # replaced by Google Jobs
+                "glassdoor":   "arbeitnow",
+                "ziprecruiter":"remoteok",
+                "dice":        "remotive",
+                "monster":     "themuse",
             }
-            mapped = []
-            for p in configured:
-                mapped.append(remap.get(p, p))
-            # Keep only those with HTTP scrapers
+            mapped = [remap.get(p, p) for p in configured]
             enabled = [p for p in mapped if p in HTTP_SCRAPERS]
             return enabled if enabled else default
         except (json.JSONDecodeError, TypeError):

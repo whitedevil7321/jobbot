@@ -1,18 +1,19 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, User, Filter, MessageCircle, Settings,
-  ClipboardList, Bot, Zap,
+  ClipboardList, Bot, Zap, PlayCircle,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const NAV = [
-  { to: '/',            icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/jobs',        icon: Zap,             label: 'Job Feed' },
-  { to: '/applications',icon: ClipboardList,   label: 'Applications' },
-  { to: '/profile',     icon: User,            label: 'My Profile' },
-  { to: '/filters',     icon: Filter,          label: 'Filters' },
-  { to: '/telegram',    icon: MessageCircle,   label: 'Telegram' },
-  { to: '/settings',    icon: Settings,        label: 'Settings' },
+  { to: '/',             icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/apply-queue',  icon: PlayCircle,      label: 'Apply Queue' },
+  { to: '/jobs',         icon: Zap,             label: 'Job Feed' },
+  { to: '/applications', icon: ClipboardList,   label: 'Applications' },
+  { to: '/profile',      icon: User,            label: 'My Profile' },
+  { to: '/filters',      icon: Filter,          label: 'Filters' },
+  { to: '/telegram',     icon: MessageCircle,   label: 'Telegram' },
+  { to: '/settings',     icon: Settings,        label: 'Settings' },
 ]
 
 export default function Sidebar() {

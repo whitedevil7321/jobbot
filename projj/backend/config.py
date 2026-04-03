@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     max_concurrent_applications: int = 2
     database_url: str = "sqlite:///./data/jobbot.db"
 
+    # Email OTP settings (for auto-reading verification codes)
+    email_imap_host: str = "imap.gmail.com"
+    email_imap_port: int = 993
+    email_address: Optional[str] = None
+    email_password: Optional[str] = None   # Gmail: use App Password
+    email_otp_wait_seconds: int = 60       # How long to wait for OTP email
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

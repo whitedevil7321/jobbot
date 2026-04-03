@@ -1,66 +1,110 @@
-"""Generic job application handler for any career page."""
+"""
+Universal job application handler — works on ANY career page or company website.
+Handles: job portals (Greenhouse, Lever, Workday, iCIMS, SmartRecruiters, Taleo,
+BambooHR, JazzHR, etc.) and direct company career pages.
+"""
 import asyncio
 import logging
 import re
-from backend.services.applier.base_applier import BaseApplier, ApplicationResult, ApplyStatus
-from backend.services.applier.human_simulation import human_scroll, random_delay, human_click
+
+from backend.services.applier.base_applier import (
+    BaseApplier, ApplicationResult, ApplyStatus,
+    APPLY_SELECTORS, NEXT_SUBMIT_SELECTORS, SUCCESS_PATTERNS,
+)
+from backend.services.applier.human_simulation import human_scroll, random_delay
 
 logger = logging.getLogger(__name__)
 
-APPLY_BUTTON_PATTERNS = [
-    "text=Apply Now", "text=Apply", "text=Easy Apply", "text=Apply for this job",
-    "text=Submit Application", "text=Apply to this job", "text=Apply for Job",
-    "button[contains(@class,'apply')]",
-]
+# ── ATS-specific apply URL patterns ──────────────────────────────────────────
+# Detects which Applicant Tracking System (ATS) the page uses
+ATS_PATTERNS = {
+    "greenhouse":      r"boards\.greenhouse\.io|greenhouse\.io/embed",
+    "lever":           r"jobs\.lever\.co",
+    "workday":         r"myworkdayjobs\.com|wd\d+\.myworkday\.com",
+    "icims":           r"careers\.icims\.com|\.icims\.com",
+    "smartrecruiters": r"jobs\.smartrecruiters\.com|smartrecruiters\.com/jobs",
+    "ashby":           r"jobs\.ashbyhq\.com",
+    "bamboohr":        r"\.bamboohr\.com/jobs",
+    "jobvite":         r"jobs\.jobvite\.com",
+    "taleo":           r"\.taleo\.net",
+    "successfactors":  r"\.successfactors\.(com|eu)",
+    "jazz":            r"app\.jazz\.co",
+    "rippling":        r"ats\.rippling\.com",
+    "dover":           r"app\.dover\.com",
+    "indeed":          r"indeed\.com/apply",
+    "linkedin":        r"linkedin\.com/jobs/apply",
+}
 
-SUBMIT_BUTTON_PATTERNS = [
-    "text=Submit", "text=Submit Application", "text=Send Application",
-    "button[type='submit']", "input[type='submit']",
-    "text=Next", "text=Continue",
-]
 
-SUCCESS_PATTERNS = [
-    "application submitted", "thank you for applying", "we received your application",
-    "application received", "successfully applied", "your application has been",
-]
+def _detect_ats(url: str) -> str:
+    """Return the ATS name for a given URL, or 'generic'."""
+    url_lower = url.lower()
+    for ats, pattern in ATS_PATTERNS.items():
+        if re.search(pattern, url_lower):
+            return ats
+    return "generic"
 
 
 class GenericApplier(BaseApplier):
+
     async def apply(self) -> ApplicationResult:
         url = self.job.apply_url or self.job.url
+        if not url:
+            return ApplicationResult(status=ApplyStatus.FAILED, error="No URL for job")
+
+        ats = _detect_ats(url)
+        logger.info(f"Applying to job {self.job.id} via {ats}: {url}")
+
         if not await self._open_page(url):
             return ApplicationResult(status=ApplyStatus.FAILED, error="Could not open page")
 
         try:
+            # ── Check if already applied ──────────────────────────────────
             if await self._check_already_applied():
                 return ApplicationResult(status=ApplyStatus.ALREADY_APPLIED)
 
-            # Prepare cover letter in background
+            # ── Generate cover letter in background ───────────────────────
             self.cover_letter = await self._prepare_cover_letter()
 
-            # Find and click apply button
+            # ── Handle ATS-specific login prompts ─────────────────────────
+            await self._handle_login_prompt()
+
+            # ── Find and click Apply button ───────────────────────────────
             apply_clicked = await self._click_apply_button()
             if not apply_clicked:
-                # Some pages are the application form directly
-                logger.info(f"No apply button found at {url}, treating page as form")
+                logger.info(f"No apply button — treating page as direct application form")
 
             await random_delay(2, 4)
 
-            # Handle multi-step form (up to 10 steps)
-            for step in range(10):
-                logger.info(f"Filling form step {step + 1} for job {self.job.id}")
+            # ── Handle multi-step form (up to 15 steps) ───────────────────
+            prev_url = self.page.url
+            for step in range(15):
+                logger.info(f"Step {step + 1} for job {self.job.id}")
+
+                await human_scroll(self.page, "down", 400)
+                await random_delay(0.5, 1.0)
+
+                # Check for success first
+                if await self._check_success():
+                    screenshot = await self._take_screenshot("_success")
+                    return ApplicationResult(
+                        status=ApplyStatus.SUBMITTED,
+                        screenshot_path=screenshot,
+                        cover_letter_used=self.cover_letter,
+                        screening_answers=self.screening_answers,
+                    )
 
                 # Fill all visible form fields
                 answers = await self._fill_form_fields()
                 if answers:
                     self.screening_answers.update(answers)
 
-                # Upload resume if file input present
+                # Upload resume
                 await self._handle_resume_upload()
 
                 await random_delay(1, 2)
 
-                # Check for success
+                # Check for success again (some forms submit on fill)
                 if await self._check_success():
                     screenshot = await self._take_screenshot("_success")
                     return ApplicationResult(
@@ -70,21 +114,22 @@ class GenericApplier(BaseApplier):
                         screening_answers=self.screening_answers,
                     )
 
-                # Try to proceed to next step
+                # Try to proceed (Next / Submit)
                 proceeded = await self._click_next_or_submit()
+
                 if not proceeded:
-                    # Stuck
                     screenshot = await self._take_screenshot("_stuck")
                     return ApplicationResult(
                         status=ApplyStatus.STUCK,
-                        stuck_reason="Could not proceed to next step or submit",
+                        stuck_reason="Could not find Next/Submit button",
                         screenshot_path=screenshot,
                         screening_answers=self.screening_answers,
                     )
 
                 await random_delay(2, 4)
+                await self._dismiss_popups()
 
-                # Check for success after submit
+                # Check success after submit
                 if await self._check_success():
                     screenshot = await self._take_screenshot("_success")
                     return ApplicationResult(
@@ -94,15 +139,51 @@ class GenericApplier(BaseApplier):
                         screening_answers=self.screening_answers,
                     )
 
+                # Detect if we're on the same page (stuck in a loop)
+                current_url = self.page.url
+                if current_url == prev_url:
+                    # Check if there are required fields we missed
+                    unfilled = await self._find_unfilled_required()
+                    if unfilled:
+                        logger.warning(f"Required fields unfilled: {unfilled}")
+                        # Try to fill them
+                        for field_el, label in unfilled:
+                            try:
+                                await self._fill_single_input(field_el, self.screening_answers)
+                            except Exception:
+                                pass
+                        # Try submit again
+                        await self._click_next_or_submit()
+                        await random_delay(2, 3)
+                        if await self._check_success():
+                            screenshot = await self._take_screenshot("_success")
+                            return ApplicationResult(
+                                status=ApplyStatus.SUBMITTED,
+                                screenshot_path=screenshot,
+                                cover_letter_used=self.cover_letter,
+                                screening_answers=self.screening_answers,
+                            )
+                        # Still stuck
+                        screenshot = await self._take_screenshot("_stuck")
+                        return ApplicationResult(
+                            status=ApplyStatus.STUCK,
+                            stuck_reason=f"Required fields could not be filled: {', '.join(l for _, l in unfilled[:3])}",
+                            screenshot_path=screenshot,
+                            screening_answers=self.screening_answers,
+                        )
+
+                prev_url = current_url
+
             screenshot = await self._take_screenshot("_timeout")
             return ApplicationResult(
                 status=ApplyStatus.STUCK,
-                stuck_reason="Maximum form steps reached",
+                stuck_reason="Maximum form steps (15) reached without submission",
                 screenshot_path=screenshot,
+                screening_answers=self.screening_answers,
             )
 
         except Exception as e:
-            logger.error(f"GenericApplier error for job {self.job.id}: {e}")
+            logger.error(f"GenericApplier error for job {self.job.id}: {e}", exc_info=True)
             screenshot = await self._take_screenshot("_error")
             return ApplicationResult(
                 status=ApplyStatus.FAILED,
@@ -112,72 +193,54 @@ class GenericApplier(BaseApplier):
         finally:
             await self._close_page()
 
-    async def _click_apply_button(self) -> bool:
+    async def _handle_login_prompt(self):
+        """
+        Some ATSs ask you to sign in / create account before applying.
+        We skip sign-in prompts and look for 'Apply without account' / 'Guest' links.
+        """
         if not self.page:
-            return False
-        apply_selectors = [
-            "a:has-text('Apply Now')", "button:has-text('Apply Now')",
-            "a:has-text('Apply')", "button:has-text('Apply')",
-            "a:has-text('Easy Apply')", "button:has-text('Easy Apply')",
-            "a[class*='apply']", "button[class*='apply']",
-            "a[href*='apply']",
+            return
+        guest_selectors = [
+            "a:has-text('Apply without signing in')",
+            "a:has-text('Continue as guest')",
+            "button:has-text('Continue as guest')",
+            "a:has-text('Apply as guest')",
+            "button:has-text('Apply without account')",
+            "a:has-text('Skip sign in')",
+            "button:has-text('Skip')",
+            "a:has-text('Continue without')",
         ]
-        for sel in apply_selectors:
+        for sel in guest_selectors:
             try:
                 el = await self.page.query_selector(sel)
                 if el and await el.is_visible():
-                    await el.scroll_into_view_if_needed()
-                    await random_delay(0.5, 1.0)
                     await el.click()
                     await random_delay(1.5, 3)
-                    return True
+                    logger.info("Clicked guest/no-account option")
+                    return
             except Exception:
                 continue
-        return False
 
-    async def _handle_resume_upload(self):
-        if not self.profile.resume_path:
-            return
-        import os
-        if not os.path.exists(self.profile.resume_path):
-            return
+    async def _find_unfilled_required(self) -> list:
+        """Find required form fields that are still empty."""
+        unfilled = []
         try:
-            file_inputs = await self.page.query_selector_all("input[type='file']")
-            for fi in file_inputs:
-                if await fi.is_visible():
-                    await fi.set_input_files(self.profile.resume_path)
-                    await random_delay(0.8, 2.0)
-                    break
+            required = await self.page.query_selector_all(
+                "input[required]:not([type='hidden']):not([type='submit']):not([type='file']), "
+                "textarea[required], select[required], "
+                "[aria-required='true']"
+            )
+            for el in required:
+                try:
+                    if not await el.is_visible():
+                        continue
+                    tag = await el.evaluate("e => e.tagName.toLowerCase()")
+                    val = await el.evaluate("e => e.value")
+                    if not val or not val.strip():
+                        label = await self._get_label_for(el) or "Unknown field"
+                        unfilled.append((el, label))
+                except Exception:
+                    continue
         except Exception as e:
-            logger.debug(f"Resume upload error: {e}")
-
-    async def _click_next_or_submit(self) -> bool:
-        if not self.page:
-            return False
-        button_selectors = [
-            "button[type='submit']", "input[type='submit']",
-            "button:has-text('Submit')", "button:has-text('Next')",
-            "button:has-text('Continue')", "button:has-text('Proceed')",
-            "a:has-text('Submit')", "a:has-text('Next')",
-        ]
-        for sel in button_selectors:
-            try:
-                el = await self.page.query_selector(sel)
-                if el and await el.is_visible():
-                    await el.scroll_into_view_if_needed()
-                    await random_delay(0.5, 1.5)
-                    await el.click()
-                    await random_delay(2, 4)
-                    return True
-            except Exception:
-                continue
-        return False
-
-    async def _check_success(self) -> bool:
-        if not self.page:
-            return False
-        try:
-            content = (await self.page.content()).lower()
-            return any(p in content for p in SUCCESS_PATTERNS)
-        except Exception:
-            return False
+            logger.debug(f"Required field check error: {e}")
+        return unfilled

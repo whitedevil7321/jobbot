@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.v1 import profile, jobs, filters, telegram, ollama, scheduler
+from backend.api.v1 import profile, jobs, filters, telegram, ollama, scheduler, email_config
 from backend.config import settings
 
 logging.basicConfig(
@@ -101,6 +101,7 @@ app.include_router(filters.router, prefix="/api/v1")
 app.include_router(telegram.router, prefix="/api/v1")
 app.include_router(ollama.router, prefix="/api/v1")
 app.include_router(scheduler.router, prefix="/api/v1")
+app.include_router(email_config.router, prefix="/api/v1")
 
 
 @app.websocket("/ws/jobs")
