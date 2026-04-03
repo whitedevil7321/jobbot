@@ -6,7 +6,9 @@
       "Bash(pip list:*)",
       "Bash(git add:*)",
       "Bash(git -C:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

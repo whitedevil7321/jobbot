@@ -5,7 +5,9 @@ __pycache__/
 .venv/
 venv/
 *.db
-data/resumes/
+*.db-shm
+*.db-wal
+data/
 logs/
 node_modules/
 frontend/dist/

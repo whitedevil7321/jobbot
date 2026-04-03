@@ -127,9 +127,32 @@ frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fronte
 if os.path.exists(frontend_dist):
     from fastapi.responses import FileResponse
 
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         index = os.path.join(frontend_dist, "index.html")
         return FileResponse(index)
+else:
+    from fastapi.responses import HTMLResponse
+
+    @app.get("/{full_path:path}")
+    async def frontend_not_built(full_path: str):
+        return HTMLResponse("""
+<!DOCTYPE html><html><head><title>JobBot</title>
+<style>body{font-family:system-ui;background:#0a0a0f;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}
+.box{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:40px;max-width:480px;text-align:center;}
+h1{color:#8b5cf6;margin:0 0 8px;}code{background:#1f2937;padding:2px 8px;border-radius:4px;color:#a78bfa;}
+.step{text-align:left;margin:16px 0;padding:12px;background:#1f2937;border-radius:8px;font-size:14px;}
+</style></head><body><div class="box">
+<h1>⚡ JobBot</h1>
+<p style="color:#9ca3af;margin:0 0 24px">Backend is running! Frontend needs to be built.</p>
+<div class="step">1. Open a new terminal in the project folder</div>
+<div class="step">2. Run: <code>cd frontend</code></div>
+<div class="step">3. Run: <code>npm install</code></div>
+<div class="step">4. Run: <code>npm run build</code></div>
+<div class="step">5. Restart: <code>start.bat</code></div>
+<p style="margin-top:24px;color:#6b7280;font-size:13px">API is available at <code>/api/v1</code> · Health: <code>/api/health</code></p>
+</div></body></html>""", status_code=200)
