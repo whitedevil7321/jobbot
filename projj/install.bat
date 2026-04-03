@@ -37,8 +37,34 @@ call .venv\Scripts\activate.bat
 
 echo.
 echo [2/5] Installing Python dependencies...
-pip install -r requirements.txt --quiet
-if errorlevel 1 ( echo [ERROR] pip install failed & pause & exit /b 1 )
+echo     (This may take a few minutes on slow connections)
+
+:: Upgrade pip first
+python -m pip install --upgrade pip --quiet
+
+:: Install in batches with increased timeout to avoid network timeouts
+pip install --timeout 120 --retries 5 fastapi uvicorn[standard] sqlalchemy pydantic pydantic-settings
+if errorlevel 1 ( echo [ERROR] Core packages failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 python-multipart aiofiles python-dotenv websockets httpx
+if errorlevel 1 ( echo [ERROR] HTTP packages failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 playwright
+if errorlevel 1 ( echo [ERROR] Playwright failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 python-telegram-bot
+if errorlevel 1 ( echo [ERROR] Telegram package failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 ollama apscheduler
+if errorlevel 1 ( echo [ERROR] Ollama/Scheduler packages failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 beautifulsoup4 lxml Pillow fake-useragent
+if errorlevel 1 ( echo [ERROR] Scraping packages failed & pause & exit /b 1 )
+
+pip install --timeout 120 --retries 5 pypdf python-docx
+if errorlevel 1 ( echo [ERROR] Document packages failed & pause & exit /b 1 )
+
+echo [OK] All Python dependencies installed
 
 echo.
 echo [3/5] Installing Playwright browsers...
