@@ -34,10 +34,12 @@ class LinkedInScraper(BaseScraper):
                     "sortBy": "DD",
                 }
                 if filters.get("job_types"):
-                    jt = filters["job_types"][0]
-                    type_map = {"full-time": "F", "part-time": "P", "contract": "C", "internship": "I"}
-                    if jt in type_map:
-                        params["f_JT"] = type_map[jt]
+                    job_types = filters["job_types"]
+                    if job_types:
+                        jt = job_types[0]
+                        type_map = {"full-time": "F", "part-time": "P", "contract": "C", "internship": "I"}
+                        if jt in type_map:
+                            params["f_JT"] = type_map[jt]
 
                 url = self.BASE_URL + urlencode(params)
                 try:

@@ -8,7 +8,8 @@
       "Bash(git -C:*)",
       "Bash(git commit:*)",
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(find /c/Users/Admin/Desktop/projj/backend/services/scraper -type f -name *.py)"
     ]
   }
 }

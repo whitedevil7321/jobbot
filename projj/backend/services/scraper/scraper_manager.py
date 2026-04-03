@@ -1,132 +1,195 @@
+"""
+Scraper manager — orchestrates all scrapers.
+HTTP scrapers run first (fast, reliable, no browser needed).
+Playwright scrapers run as fallback / for direct URL scraping when applying.
+"""
 import asyncio
 import json
 import logging
 import random
-from typing import List
-from playwright.async_api import async_playwright, BrowserContext
+from typing import List, Optional
 
 from backend.services.scraper.base_scraper import ScrapedJob
-from backend.services.scraper.linkedin_scraper import LinkedInScraper
-from backend.services.scraper.indeed_scraper import IndeedScraper
-from backend.services.scraper.glassdoor_scraper import GlassdoorScraper
-from backend.services.scraper.ziprecruiter_scraper import ZipRecruiterScraper
-from backend.services.scraper.dice_scraper import DiceScraper
-from backend.services.scraper.monster_scraper import MonsterScraper
-from backend.services.scraper.generic_scraper import GenericCareerScraper
+from backend.services.scraper.http_scrapers import (
+    scrape_remoteok,
+    scrape_remotive,
+    scrape_arbeitnow,
+    scrape_indeed_rss,
+    scrape_linkedin_http,
+    scrape_themuse,
+)
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-SCRAPER_CLASSES = {
-    "linkedin": LinkedInScraper,
-    "indeed": IndeedScraper,
-    "glassdoor": GlassdoorScraper,
-    "ziprecruiter": ZipRecruiterScraper,
-    "dice": DiceScraper,
-    "monster": MonsterScraper,
+# Map portal name → HTTP scraper function
+HTTP_SCRAPERS = {
+    "remoteok":  scrape_remoteok,
+    "remotive":  scrape_remotive,
+    "arbeitnow": scrape_arbeitnow,
+    "indeed":    scrape_indeed_rss,
+    "linkedin":  scrape_linkedin_http,
+    "themuse":   scrape_themuse,
 }
+
+# Playwright-based scrapers (used only for direct URL scraping during apply)
+_playwright = None
+_browser = None
+_context = None
 
 
 class ScraperManager:
-    def __init__(self):
-        self._playwright = None
-        self._browser = None
-        self._context: BrowserContext | None = None
-
-    async def start(self):
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=settings.headless,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-infobars",
-                "--window-size=1920,1080",
-            ],
-        )
-        self._context = await self._browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            java_script_enabled=True,
-            ignore_https_errors=True,
-        )
-        # Stealth: hide webdriver flag
-        await self._context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-            window.chrome = { runtime: {} };
-        """)
-        logger.info("ScraperManager browser started")
-
-    async def stop(self):
-        if self._context:
-            await self._context.close()
-        if self._browser:
-            await self._browser.close()
-        if self._playwright:
-            await self._playwright.stop()
-        logger.info("ScraperManager browser stopped")
 
     async def scrape_all(self, filter_config) -> List[ScrapedJob]:
-        if not self._context:
-            await self.start()
-
+        """Run all enabled HTTP scrapers and return deduplicated jobs."""
         filters = self._build_filters(filter_config)
-        enabled_portals = self._get_enabled_portals(filter_config)
+        enabled = self._get_enabled_portals(filter_config)
 
-        # Randomize order for anti-detection
-        random.shuffle(enabled_portals)
+        # Only run HTTP scrapers that are enabled
+        http_enabled = [p for p in enabled if p in HTTP_SCRAPERS]
+        random.shuffle(http_enabled)
 
-        all_jobs = []
-        for portal_name in enabled_portals:
-            cls = SCRAPER_CLASSES.get(portal_name)
-            if not cls:
-                continue
-            try:
-                scraper = cls(browser_context=self._context)
-                jobs = await scraper.scrape(filters)
-                logger.info(f"{portal_name}: scraped {len(jobs)} jobs")
-                all_jobs.extend(jobs)
-                # Delay between portals
-                await asyncio.sleep(random.uniform(2, 5))
-            except Exception as e:
-                logger.error(f"Scraper {portal_name} failed: {e}")
+        logger.info(f"Running scrapers: {http_enabled}")
+
+        # Run all scrapers concurrently
+        tasks = [HTTP_SCRAPERS[name](filters) for name in http_enabled]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_jobs: List[ScrapedJob] = []
+        for name, result in zip(http_enabled, results):
+            if isinstance(result, Exception):
+                logger.error(f"Scraper '{name}' raised exception: {result}")
+            elif isinstance(result, list):
+                all_jobs.extend(result)
 
         # Deduplicate by URL
-        seen_urls = set()
-        unique_jobs = []
+        seen: set = set()
+        unique: List[ScrapedJob] = []
         for job in all_jobs:
-            if job.url not in seen_urls:
-                seen_urls.add(job.url)
-                unique_jobs.append(job)
+            if job.url and job.url not in seen:
+                seen.add(job.url)
+                unique.append(job)
 
-        logger.info(f"Total unique jobs scraped: {len(unique_jobs)}")
-        return unique_jobs
+        logger.info(f"Total unique jobs scraped: {len(unique)}")
+        return unique
 
-    async def scrape_single_url(self, url: str) -> ScrapedJob | None:
-        if not self._context:
-            await self.start()
-        scraper = GenericCareerScraper(browser_context=self._context)
-        return await scraper.scrape_url(url)
+    async def scrape_single_url(self, url: str) -> Optional[ScrapedJob]:
+        """Scrape a single job URL using Playwright (for Telegram-submitted links)."""
+        try:
+            context = await self._get_playwright_context()
+            if context is None:
+                logger.warning("Playwright not available for single URL scrape")
+                return _minimal_job_from_url(url)
+
+            from backend.services.scraper.generic_scraper import GenericCareerScraper
+            scraper = GenericCareerScraper(browser_context=context)
+            return await scraper.scrape_url(url)
+        except Exception as e:
+            logger.error(f"scrape_single_url error: {e}")
+            return _minimal_job_from_url(url)
+
+    async def stop(self):
+        global _playwright, _browser, _context
+        try:
+            if _context:
+                await _context.close()
+            if _browser:
+                await _browser.close()
+            if _playwright:
+                await _playwright.stop()
+        except Exception as e:
+            logger.error(f"ScraperManager stop error: {e}")
+        finally:
+            _context = None
+            _browser = None
+            _playwright = None
+
+    async def _get_playwright_context(self):
+        global _playwright, _browser, _context
+        if _context:
+            return _context
+        try:
+            from playwright.async_api import async_playwright
+            _playwright = await async_playwright().start()
+            _browser = await _playwright.chromium.launch(
+                headless=settings.headless,
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+            _context = await _browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+            )
+            await _context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+            )
+            return _context
+        except Exception as e:
+            logger.error(f"Playwright launch failed: {e}")
+            return None
 
     def _build_filters(self, filter_config) -> dict:
+        filters: dict = {}
         if not filter_config:
-            return {}
-        filters = {}
-        if filter_config.locations:
-            filters["locations"] = json.loads(filter_config.locations)
-        if filter_config.domains:
-            filters["keywords"] = json.loads(filter_config.domains)
-        if filter_config.job_types:
-            filters["job_types"] = json.loads(filter_config.job_types)
+            return filters
+        try:
+            if filter_config.locations:
+                filters["locations"] = json.loads(filter_config.locations)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        try:
+            if filter_config.domains:
+                domains = json.loads(filter_config.domains)
+                filters["domains"] = domains
+                filters["keywords"] = " ".join(domains) if domains else ""
+        except (json.JSONDecodeError, TypeError):
+            pass
+        try:
+            if filter_config.job_types:
+                filters["job_types"] = json.loads(filter_config.job_types)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        try:
+            if filter_config.required_skills:
+                filters["skills"] = json.loads(filter_config.required_skills)
+        except (json.JSONDecodeError, TypeError):
+            pass
         return filters
 
-    def _get_enabled_portals(self, filter_config) -> list[str]:
-        if filter_config and filter_config.portals:
-            return json.loads(filter_config.portals)
-        return list(SCRAPER_CLASSES.keys())
+    def _get_enabled_portals(self, filter_config) -> List[str]:
+        default = list(HTTP_SCRAPERS.keys())
+        if not filter_config or not filter_config.portals:
+            return default
+        try:
+            configured = json.loads(filter_config.portals)
+            # Map legacy Playwright portal names to HTTP scraper names
+            remap = {
+                "glassdoor": "arbeitnow",
+                "ziprecruiter": "remoteok",
+                "dice": "remotive",
+                "monster": "themuse",
+            }
+            mapped = []
+            for p in configured:
+                mapped.append(remap.get(p, p))
+            # Keep only those with HTTP scrapers
+            enabled = [p for p in mapped if p in HTTP_SCRAPERS]
+            return enabled if enabled else default
+        except (json.JSONDecodeError, TypeError):
+            return default
+
+
+def _minimal_job_from_url(url: str) -> ScrapedJob:
+    """Create a minimal ScrapedJob when full scraping isn't possible."""
+    return ScrapedJob(
+        source="telegram",
+        url=url,
+        title="Job from link",
+        apply_url=url,
+    )
 
 
 scraper_manager = ScraperManager()

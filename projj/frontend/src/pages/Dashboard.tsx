@@ -4,7 +4,7 @@ import { applicationsApi, jobsApi } from '../api/jobs'
 import { schedulerApi } from '../api/filters'
 import { useWebSocket } from '../hooks/useWebSocket'
 import StatusBadge from '../components/StatusBadge'
-import { Zap, CheckCircle2, Clock, AlertTriangle, XCircle, Play, RefreshCw } from 'lucide-react'
+import { Zap, CheckCircle2, Clock, AlertTriangle, XCircle, RefreshCw, MessageCircle } from 'lucide-react'
 
 export default function Dashboard() {
   const qc = useQueryClient()
@@ -25,6 +25,21 @@ export default function Dashboard() {
     queryKey: ['scheduler-status'],
     queryFn: () => schedulerApi.status().then(r => r.data),
     refetchInterval: 5000,
+  })
+
+  const { data: schedulerLogs } = useQuery({
+    queryKey: ['scheduler-logs-dash'],
+    queryFn: () => schedulerApi.logs().then(r => r.data),
+    refetchInterval: 15000,
+  })
+
+  const { data: telegramStatus } = useQuery({
+    queryKey: ['telegram-status-dash'],
+    queryFn: async () => {
+      try { return (await import('../api/filters')).telegramApi.status().then((r: any) => r.data) }
+      catch { return { running: false } }
+    },
+    refetchInterval: 10000,
   })
 
   const handleWsMessage = useCallback((msg: any) => {
@@ -58,7 +73,11 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${schedulerStatus?.running ? 'border-emerald-800 bg-emerald-950 text-emerald-400' : 'border-gray-700 bg-gray-900 text-gray-500'}`}>
             <span className={`w-2 h-2 rounded-full ${schedulerStatus?.running ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
-            {schedulerStatus?.running ? 'Scraper Running' : 'Scraper Stopped'}
+            {schedulerStatus?.running ? 'Scraper Active' : 'Scraper Stopped'}
+          </div>
+          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border ${telegramStatus?.running ? 'border-blue-800 bg-blue-950 text-blue-400' : 'border-gray-700 bg-gray-900 text-gray-500'}`}>
+            <MessageCircle size={12} />
+            {telegramStatus?.running ? 'Telegram Connected' : 'Telegram Offline'}
           </div>
           <button onClick={triggerScrape} className="btn-secondary flex items-center gap-2">
             <RefreshCw size={14} /> Scrape Now
@@ -111,16 +130,23 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Scheduler jobs */}
-      {schedulerStatus?.jobs?.length > 0 && (
+      {/* Scrape run log */}
+      {schedulerLogs?.length > 0 && (
         <div className="card">
-          <h2 className="font-semibold text-white mb-3">Scheduled Tasks</h2>
-          {schedulerStatus.jobs.map((j: any) => (
-            <div key={j.id} className="flex items-center justify-between text-sm py-2">
-              <span className="text-gray-300">{j.name}</span>
-              <span className="text-gray-500">Next: {j.next_run ? new Date(j.next_run).toLocaleTimeString() : 'N/A'}</span>
-            </div>
-          ))}
+          <h2 className="font-semibold text-white mb-3">Recent Scrape Runs</h2>
+          <div className="space-y-1">
+            {schedulerLogs.slice(0, 5).map((log: any) => (
+              <div key={log.id} className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-gray-800/50">
+                <span className="text-gray-500 font-mono">{log.started_at?.split('T')[1]?.split('.')[0]}</span>
+                <span className={log.status === 'completed' ? 'text-emerald-400' : log.status === 'failed' ? 'text-red-400' : 'text-blue-400 animate-pulse'}>
+                  {log.status}
+                </span>
+                <span className="text-gray-400">{log.jobs_found} found</span>
+                <span className="text-violet-400">+{log.jobs_new} new</span>
+                {log.error && <span className="text-red-400 truncate max-w-[160px]" title={log.error}>⚠ {log.error.slice(0,40)}</span>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
