@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "JobBot - Auto Job Applier",
+  "version": "1.0.0",
+  "description": "Automatically apply to jobs using local AI (Ollama). Supports Telegram, all major ATS platforms, and zero human interaction.",
+
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "storage",
+    "scripting",
+    "alarms",
+    "notifications",
+    "webNavigation"
+  ],
+
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "JobBot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["content/overlay.css", "icons/*"],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ]
+}

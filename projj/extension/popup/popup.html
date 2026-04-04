@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobBot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <span class="logo">⚡</span>
+      <span class="title">JobBot</span>
+    </div>
+    <div id="conn-badge" class="badge badge-gray">Connecting...</div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar" class="status-bar hidden">
+    <span id="status-icon">⚡</span>
+    <span id="status-text">Ready</span>
+  </div>
+
+  <!-- Auto-apply toggle -->
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">Auto-Apply</div>
+      <div class="toggle-sub">Process queue automatically</div>
+    </div>
+    <label class="toggle">
+      <input type="checkbox" id="auto-apply-toggle" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <!-- Submit URL -->
+  <div class="section">
+    <div class="section-label">Apply to a Job</div>
+    <div class="url-row">
+      <input type="url" id="url-input" placeholder="Paste job URL here..." />
+      <button id="apply-btn" class="btn-primary">Apply</button>
+    </div>
+    <div id="url-feedback" class="feedback hidden"></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-val" id="stat-applied">–</div>
+      <div class="stat-lbl">Applied</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-queued">–</div>
+      <div class="stat-lbl">Queued</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-failed">–</div>
+      <div class="stat-lbl">Failed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-stuck">–</div>
+      <div class="stat-lbl">Stuck</div>
+    </div>
+  </div>
+
+  <!-- Active job -->
+  <div id="active-job" class="active-job hidden">
+    <div class="active-header">
+      <span class="pulse"></span>
+      <span id="active-title">Applying...</span>
+    </div>
+    <div id="active-progress" class="active-progress"></div>
+  </div>
+
+  <!-- Footer actions -->
+  <div class="footer">
+    <button id="btn-profile" class="footer-btn">👤 Profile</button>
+    <button id="btn-dashboard" class="footer-btn">📊 Dashboard</button>
+    <button id="btn-telegram" class="footer-btn">✈️ Telegram</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobBot — My Profile</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111827;
+      --surface2: #1f2937;
+      --border: #1f2937;
+      --border2: #374151;
+      --text: #e2e8f0;
+      --muted: #9ca3af;
+      --dim: #6b7280;
+      --accent: #7c3aed;
+      --accent-light: #a78bfa;
+      --green: #10b981;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .app { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .sidebar-logo h1 { font-size: 16px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .sidebar-logo p { font-size: 11px; color: var(--dim); margin-top: 2px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 20px; font-size: 13px; color: var(--muted);
+      cursor: pointer; border: none; background: none; width: 100%;
+      text-align: left; border-left: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { color: var(--accent-light); border-left-color: var(--accent); background: rgba(124,58,237,0.08); }
+
+    /* ── Main content ── */
+    .main {
+      flex: 1;
+      padding: 32px;
+      max-width: 860px;
+    }
+
+    .page-header {
+      margin-bottom: 28px;
+    }
+    .page-header h2 { font-size: 22px; font-weight: 700; color: #fff; }
+    .page-header p  { font-size: 13px; color: var(--dim); margin-top: 4px; }
+
+    /* ── Completion bar ── */
+    .completion-bar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .completion-bar .label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .progress-track {
+      flex: 1; height: 6px; background: var(--surface2);
+      border-radius: 99px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; background: var(--accent);
+      border-radius: 99px; transition: width 0.4s;
+    }
+    .completion-bar .pct { font-size: 12px; font-weight: 700; color: var(--accent-light); white-space: nowrap; }
+
+    /* ── Cards / Sections ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-icon { font-size: 18px; }
+    .card-title { font-size: 15px; font-weight: 600; color: #fff; }
+    .card-sub   { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+    /* ── Form fields ── */
+    .grid { display: grid; gap: 14px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field.span-2 { grid-column: span 2; }
+    .field.span-3 { grid-column: span 3; }
+
+    label {
+      font-size: 11px; font-weight: 600;
+      color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    label .req { color: var(--red); margin-left: 2px; }
+
+    input, select, textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 7px;
+      padding: 8px 11px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+    input::placeholder, textarea::placeholder { color: #4b5563; }
+    select option { background: var(--surface2); }
+
+    textarea { resize: vertical; min-height: 80px; }
+
+    /* ── Tag input ── */
+    .tag-container {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      padding: 7px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 7px;
+      min-height: 42px;
+      cursor: text;
+      transition: border-color 0.15s;
+    }
+    .tag-container:focus-within { border-color: var(--accent); }
+    .tag {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(124,58,237,0.2); color: var(--accent-light);
+      border: 1px solid rgba(124,58,237,0.3);
+      border-radius: 5px; padding: 2px 8px;
+      font-size: 12px; font-weight: 500;
+    }
+    .tag-remove {
+      background: none; border: none; color: inherit;
+      cursor: pointer; padding: 0; line-height: 1;
+      font-size: 14px; opacity: 0.7;
+    }
+    .tag-remove:hover { opacity: 1; }
+    .tag-input {
+      flex: 1; min-width: 100px;
+      background: transparent; border: none;
+      outline: none; font-size: 13px; color: var(--text);
+      padding: 2px 4px;
+    }
+    .tag-input::placeholder { color: #4b5563; }
+
+    /* ── Resume upload ── */
+    .resume-zone {
+      border: 2px dashed var(--border2);
+      border-radius: 10px;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--surface2);
+    }
+    .resume-zone:hover, .resume-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(124,58,237,0.06);
+    }
+    .resume-zone .icon { font-size: 32px; margin-bottom: 8px; }
+    .resume-zone .title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+    .resume-zone .sub   { font-size: 12px; color: var(--dim); }
+    .resume-zone input[type="file"] { display: none; }
+    .resume-uploaded {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      background: rgba(16,185,129,0.08);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: 8px;
+      margin-top: 12px;
+    }
+    .resume-uploaded .file-icon { font-size: 24px; }
+    .resume-uploaded .file-name { font-size: 13px; font-weight: 500; color: var(--green); }
+    .resume-uploaded .file-sub  { font-size: 11px; color: var(--dim); margin-top: 1px; }
+    .resume-uploaded .remove-btn {
+      margin-left: auto; background: none; border: none;
+      color: var(--dim); cursor: pointer; font-size: 16px;
+    }
+    .resume-uploaded .remove-btn:hover { color: var(--red); }
+
+    /* ── Checkbox row ── */
+    .check-row { display: flex; align-items: center; gap: 10px; }
+    .check-row input[type="checkbox"] {
+      width: 16px; height: 16px; accent-color: var(--accent);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .check-row label {
+      font-size: 13px; color: var(--text);
+      text-transform: none; letter-spacing: 0; font-weight: 400;
+      cursor: pointer;
+    }
+
+    /* ── Save button & toast ── */
+    .save-bar {
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 16px 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .btn-save {
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 8px;
+      padding: 10px 28px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .btn-save:hover { background: #6d28d9; }
+    .btn-save:disabled { background: var(--surface2); color: var(--dim); cursor: not-allowed; }
+    .save-msg {
+      font-size: 13px; font-weight: 500;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .save-msg.visible { opacity: 1; }
+    .save-msg.ok  { color: var(--green); }
+    .save-msg.err { color: var(--red); }
+
+    /* ── Hint text ── */
+    .hint { font-size: 11px; color: var(--dim); margin-top: 3px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      .sidebar { display: none; }
+      .main { padding: 20px 16px; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .field.span-2, .field.span-3 { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar navigation -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>⚡ JobBot</h1>
+      <p>My Profile</p>
+    </div>
+    <button class="nav-item active" data-section="resume">📄 Resume</button>
+    <button class="nav-item" data-section="personal">👤 Personal Info</button>
+    <button class="nav-item" data-section="professional">💼 Professional</button>
+    <button class="nav-item" data-section="education">🎓 Education</button>
+    <button class="nav-item" data-section="salary">💰 Salary</button>
+    <button class="nav-item" data-section="eeo">⚖️ EEO / Demographics</button>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main">
+    <div class="page-header">
+      <h2>👤 My Profile</h2>
+      <p>All information used to auto-fill and submit job applications on your behalf.</p>
+    </div>
+
+    <!-- Completion -->
+    <div class="completion-bar">
+      <span class="label">Profile completion</span>
+      <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <span class="pct" id="progress-pct">0%</span>
+    </div>
+
+    <!-- ── Resume ────────────────────────────────────────────────────── -->
+    <div class="card" id="section-resume">
+      <div class="card-header">
+        <span class="card-icon">📄</span>
+        <div>
+          <div class="card-title">Resume</div>
+          <div class="card-sub">PDF or DOCX — used for file upload fields and cover letters</div>
+        </div>
+      </div>
+
+      <div class="resume-zone" id="resume-zone">
+        <input type="file" id="resume-file" accept=".pdf,.docx,.doc">
+        <div class="icon">📂</div>
+        <div class="title">Drop your resume here or click to browse</div>
+        <div class="sub">PDF, DOCX, or DOC · Max 10 MB</div>
+      </div>
+
+      <div id="resume-uploaded" class="resume-uploaded" style="display:none">
+        <span class="file-icon">📄</span>
+        <div>
+          <div class="file-name" id="resume-name">resume.pdf</div>
+          <div class="file-sub" id="resume-sub">Uploaded successfully</div>
+        </div>
+        <button class="remove-btn" id="resume-remove" title="Remove">✕</button>
+      </div>
+
+      <div id="resume-uploading" style="display:none;margin-top:10px;font-size:12px;color:var(--dim);">
+        ⏳ Uploading & extracting text...
+      </div>
+    </div>
+
+    <!-- ── Personal Info ─────────────────────────────────────────────── -->
+    <div class="card" id="section-personal">
+      <div class="card-header">
+        <span class="card-icon">👤</span>
+        <div>
+          <div class="card-title">Personal Information</div>
+          <div class="card-sub">Basic contact details used in every application</div>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Full Name <span class="req">*</span></label>
+          <input type="text" id="full_name" placeholder="Jane Smith" autocomplete="name">
+        </div>
+        <div class="field">
+          <label>Email Address <span class="req">*</span></label>
+          <input type="email" id="email" placeholder="jane@example.com" autocomplete="email">
+        </div>
+        <div class="field">
+          <label>Phone Number</label>
+          <input type="tel" id="phone" placeholder="+1 (555) 000-0000" autocomplete="tel">
+        </div>
+        <div class="field">
+          <label>Current Location <span class="req">*</span></label>
+          <input type="text" id="location" placeholder="New York, NY" autocomplete="off">
+          <span class="hint">City, State — used for location filter matching</span>
+        </div>
+        <div class="field">
+          <label>Street Address</label>
+          <input type="text" id="address" placeholder="123 Main St" autocomplete="street-address">
+        </div>
+        <div class="field">
+          <label>City</label>
+          <input type="text" id="city" placeholder="New York" autocomplete="address-level2">
+        </div>
+        <div class="field">
+          <label>State / Province</label>
+          <input type="text" id="state" placeholder="NY" autocomplete="address-level1">
+        </div>
+        <div class="field">
+          <label>ZIP / Postal Code</label>
+          <input type="text" id="zip_code" placeholder="10001" autocomplete="postal-code">
+        </div>
+        <div class="field">
+          <label>Country</label>
+          <select id="country" autocomplete="country-name">
+            <option value="United States">United States</option>
+            <option value="Canada">Canada</option>
+            <option value="United Kingdom">United Kingdom</option>
+            <option value="Australia">Australia</option>
+            <option value="Germany">Germany</option>
+            <option value="India">India</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Professional ──────────────────────────────────────────────── -->
+    <div class="card" id="section-professional">
+      <div class="card-header">
+        <span class="card-icon">💼</span>
+        <div>
+          <div class="card-title">Professional Details</div>
+          <div class="card-sub">Work experience, skills, and online presence</div>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>LinkedIn URL</label>
+          <input type="url" id="linkedin_url" placeholder="https://linkedin.com/in/yourname">
+        </div>
+        <div class="field">
+          <label>GitHub URL</label>
+          <input type="url" id="github_url" placeholder="https://github.com/yourname">
+        </div>
+        <div class="field">
+          <label>Portfolio / Website</label>
+          <input type="url" id="portfolio_url" placeholder="https://yoursite.com">
+        </div>
+        <div class="field">
+          <label>Years of Experience <span class="req">*</span></label>
+          <input type="number" id="years_of_exp" min="0" max="50" placeholder="0">
+        </div>
+        <div class="field">
+          <label>Work Authorization <span class="req">*</span></label>
+          <select id="work_auth">
+            <option value="citizen">US Citizen</option>
+            <option value="greencard">Green Card / PR</option>
+            <option value="h1b">H-1B Visa</option>
+            <option value="opt">OPT / STEM OPT</option>
+            <option value="tn">TN Visa</option>
+            <option value="other">Other / Non-US</option>
+          </select>
+        </div>
+        <div class="field" style="justify-content:flex-end;padding-bottom:4px">
+          <div class="check-row">
+            <input type="checkbox" id="visa_sponsorship_needed">
+            <label for="visa_sponsorship_needed">I require visa sponsorship</label>
+          </div>
+        </div>
+        <div class="field span-2">
+          <label>Professional Summary</label>
+          <textarea id="summary" rows="4" placeholder="Brief summary used in cover letters and screening questions. The AI will reference this to generate personalized responses."></textarea>
+        </div>
+        <div class="field span-2">
+          <label>Skills</label>
+          <div class="tag-container" id="skills-container">
+            <input class="tag-input" id="skills-input" placeholder="Type a skill and press Enter...">
+          </div>
+          <input type="hidden" id="skills">
+        </div>
+        <div class="field span-2">
+          <label>Target Job Titles / Roles</label>
+          <div class="tag-container" id="target_roles-container">
+            <input class="tag-input" id="target_roles-input" placeholder="e.g. Software Engineer, Backend Developer...">
+          </div>
+          <input type="hidden" id="target_roles">
+        </div>
+        <div class="field span-2">
+          <label>Target Domains / Industries</label>
+          <div class="tag-container" id="target_domains-container">
+            <input class="tag-input" id="target_domains-input" placeholder="e.g. FinTech, Healthcare, SaaS...">
+          </div>
+          <input type="hidden" id="target_domains">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Education ─────────────────────────────────────────────────── -->
+    <div class="card" id="section-education">
+      <div class="card-header">
+        <span class="card-icon">🎓</span>
+        <div>
+          <div class="card-title">Education</div>
+          <div class="card-sub">Most recent or highest degree</div>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>University / School</label>
+          <input type="text" id="school_name" placeholder="MIT, Stanford, etc.">
+        </div>
+        <div class="field">
+          <label>Degree</label>
+          <input type="text" id="degree" placeholder="Bachelor of Science in Computer Science">
+        </div>
+        <div class="field">
+          <label>Graduation Year</label>
+          <input type="number" id="graduation_year" min="1950" max="2030" placeholder="2022">
+        </div>
+        <div class="field">
+          <label>Highest Education Level</label>
+          <select id="highest_education">
+            <option value="">Select...</option>
+            <option value="High School">High School / GED</option>
+            <option value="Associate">Associate Degree</option>
+            <option value="Bachelor">Bachelor's Degree</option>
+            <option value="Master">Master's Degree</option>
+            <option value="PhD">PhD / Doctorate</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Salary ─────────────────────────────────────────────────────── -->
+    <div class="card" id="section-salary">
+      <div class="card-header">
+        <span class="card-icon">💰</span>
+        <div>
+          <div class="card-title">Salary Expectations</div>
+          <div class="card-sub">Used when forms ask for salary requirements</div>
+        </div>
+      </div>
+      <div class="grid grid-3">
+        <div class="field">
+          <label>Minimum ($)</label>
+          <input type="number" id="desired_salary_min" min="0" placeholder="80000">
+        </div>
+        <div class="field">
+          <label>Maximum ($)</label>
+          <input type="number" id="desired_salary_max" min="0" placeholder="120000">
+        </div>
+        <div class="field">
+          <label>Currency</label>
+          <select id="salary_currency">
+            <option value="USD">USD — US Dollar</option>
+            <option value="CAD">CAD — Canadian Dollar</option>
+            <option value="GBP">GBP — British Pound</option>
+            <option value="EUR">EUR — Euro</option>
+            <option value="AUD">AUD — Australian Dollar</option>
+            <option value="INR">INR — Indian Rupee</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EEO / Demographics ─────────────────────────────────────────── -->
+    <div class="card" id="section-eeo">
+      <div class="card-header">
+        <span class="card-icon">⚖️</span>
+        <div>
+          <div class="card-title">EEO / Demographics</div>
+          <div class="card-sub">Optional — only used for voluntary disclosure forms</div>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label>Gender</label>
+          <select id="gender">
+            <option value="">Select...</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Non-binary">Non-binary / Gender non-conforming</option>
+            <option value="Prefer not to say">Prefer not to say</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Ethnicity / Race</label>
+          <select id="ethnicity">
+            <option value="">Select...</option>
+            <option value="Asian">Asian</option>
+            <option value="Black or African American">Black or African American</option>
+            <option value="Hispanic or Latino">Hispanic or Latino</option>
+            <option value="Native American">Native American or Alaska Native</option>
+            <option value="Pacific Islander">Native Hawaiian or Pacific Islander</option>
+            <option value="Two or More Races">Two or More Races</option>
+            <option value="White">White / Caucasian</option>
+            <option value="Prefer not to say">Prefer not to say</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Veteran Status</label>
+          <select id="veteran_status">
+            <option value="I am not a veteran">I am not a veteran</option>
+            <option value="Veteran">Veteran</option>
+            <option value="Protected veteran">Protected Veteran</option>
+            <option value="Prefer not to say">Prefer not to say</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Disability Status</label>
+          <select id="disability_status">
+            <option value="I don't wish to answer">I don't wish to answer</option>
+            <option value="No">No disability</option>
+            <option value="Yes">Yes, I have a disability</option>
+            <option value="Prefer not to say">Prefer not to say</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Save bar ─────────────────────────────────────────────────────── -->
+    <div class="save-bar">
+      <button class="btn-save" id="save-btn">Save Profile</button>
+      <span class="save-msg" id="save-msg"></span>
+    </div>
+  </main>
+</div>
+
+<script src="profile.js"></script>
+</body>
+</html>

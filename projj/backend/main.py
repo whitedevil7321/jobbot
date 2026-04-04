@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.v1 import profile, jobs, filters, telegram, ollama, scheduler, email_config
+from backend.api.v1 import profile, jobs, filters, telegram, ollama, scheduler, email_config, extension
 from backend.config import settings
 
 logging.basicConfig(
@@ -88,7 +88,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"chrome-extension://.*|moz-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,6 +108,7 @@ app.include_router(telegram.router, prefix="/api/v1")
 app.include_router(ollama.router, prefix="/api/v1")
 app.include_router(scheduler.router, prefix="/api/v1")
 app.include_router(email_config.router, prefix="/api/v1")
+app.include_router(extension.router, prefix="/api/v1")
 
 
 @app.websocket("/ws/jobs")

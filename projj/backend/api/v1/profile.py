@@ -69,6 +69,23 @@ async def upload_resume(file: UploadFile = File(...), db: Session = Depends(get_
     return {"message": "Resume uploaded", "path": path, "text_extracted": bool(resume_text)}
 
 
+@router.get("/resume-download")
+def download_resume(db: Session = Depends(get_db)):
+    """Download the stored resume file — used by the Chrome extension for file upload fields."""
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    if not profile or not profile.resume_path:
+        raise HTTPException(404, "No resume uploaded")
+    path = profile.resume_path
+    if not os.path.exists(path):
+        raise HTTPException(404, "Resume file not found on disk")
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=os.path.basename(path),
+    )
+
+
 def _extract_text(path: str, ext: str) -> str:
     try:
         if ext == ".pdf":
